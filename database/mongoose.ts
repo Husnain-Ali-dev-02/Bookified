@@ -25,7 +25,8 @@ export const connectToDatabase = async () => {
         cached.conn = await cached.promise;
     } catch (e) {
         cached.promise = null;
-        console.error('MongoDB connection error. Please make sure MongoDB is running. ' + e);
+     const message = e instanceof Error ? e.message : String(e);
+    console.error('MongoDB connection error. Please make sure MongoDB is running.', { message });
         throw e;
     }
 

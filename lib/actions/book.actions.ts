@@ -6,6 +6,7 @@ import {escapeRegex, generateSlug, serializeData} from "@/lib/utils";
 import Book from "@/database/models/book.model";
 import BookSegment from "@/database/models/book-segment.model";
 import mongoose from "mongoose";
+import {auth} from "@clerk/nextjs/server";
 // import {getUserPlan} from "@/lib/subscription.server";
 
 export const getAllBooks = async (search?: string) => {
@@ -148,17 +149,47 @@ export const saveBookSegments = async (bookId: string, clerkId: string, segments
     try {
         await connectToDatabase();
 
-        console.log('Saving book segments...');
+        // Verify user is authenticated
+        const { userId: authenticatedUserId } = await auth();
+
+        if (!authenticatedUserId) {
+            return {
+                success: false,
+                error: "Unauthorized: User not authenticated",
+            };
+        }
+
+        // Verify the authenticated user matches the provided clerkId
+        if (authenticatedUserId !== clerkId) {
+            return {
+                success: false,
+                error: "Unauthorized: User ID mismatch",
+            };
+        }
+
+        // Verify the user owns the book
+        const book = await Book.findById(bookId).select('clerkId').lean();
+
+        if (!book) {
+            return {
+                success: false,
+                error: "Book not found",
+            };
+        }
+
+        if (book.clerkId !== authenticatedUserId) {
+            return {
+                success: false,
+                error: "Unauthorized: You do not own this book",
+            };
+        }
 
         const segmentsToInsert = segments.map(({ text, segmentIndex, pageNumber, wordCount }) => ({
-            clerkId, bookId, content: text, segmentIndex, pageNumber, wordCount
+            clerkId: authenticatedUserId, bookId, content: text, segmentIndex, pageNumber, wordCount
         }));
 
-        await BookSegment.insertMany(segmentsToInsert);
-
-        await Book.findByIdAndUpdate(bookId, { totalSegments: segments.length });
-
-        console.log('Book segments saved successfully.');
+         const created = await BookSegment.insertMany(segmentsToInsert);
+       await Book.findByIdAndUpdate(bookId, { $inc: { totalSegments: created.length } });
 
         return {
             success: true,

@@ -41,7 +41,7 @@ const FileUploader = <T extends FieldValues>({
   const onRemove = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      onChange(null);
+      onChange(undefined);
       if (inputRef.current) {
         inputRef.current.value = "";
       }
@@ -80,6 +80,7 @@ const FileUploader = <T extends FieldValues>({
                 type="button"
                 onClick={onRemove}
                 className="upload-dropzone-remove mt-2"
+                aria-label="Remove file"
               >
                 <X className="w-5 h-5" />
               </button>
