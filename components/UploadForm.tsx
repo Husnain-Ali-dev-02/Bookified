@@ -30,6 +30,11 @@ const UploadForm = () => {
         setIsMounted(true);
     }, []);
 
+    // Debug log
+    useEffect(() => {
+        console.log('Auth state:', { userId, isLoaded, isMounted });
+    }, [userId, isLoaded, isMounted]);
+
     const form = useForm<BookUploadFormValues>({
         resolver: zodResolver(UploadSchema),
         defaultValues: {
@@ -43,7 +48,7 @@ const UploadForm = () => {
 
     const onSubmit = async (data: BookUploadFormValues) => {
         if(!isLoaded) {
-           return toast.error("Authentication is loading. Please wait...");
+            return toast.error("Please wait, authenticating...");
         }
 
         if(!userId) {
@@ -79,6 +84,7 @@ const UploadForm = () => {
                 handleUploadUrl: '/api/upload',
                 contentType: 'application/pdf'
             });
+            console.log('PDF upload successful:', uploadedPdfBlob);
 
             let coverUrl: string;
 
@@ -113,17 +119,8 @@ const UploadForm = () => {
                 fileSize: pdfFile.size,
             });
 
-            console.log('[UploadForm] createBook response:', book);
-
             if(!book.success) {
-                const errorMessage = typeof book.error === 'string' 
-                    ? book.error 
-                    : book.error instanceof Error 
-                    ? book.error.message 
-                    : "Failed to create book";
-                
-                console.error('[UploadForm] Book creation error:', errorMessage);
-                toast.error(errorMessage);
+                toast.error(book.error as string || "Failed to create book");
                 if (book.isBillingError) {
                     router.push("/subscriptions");
                 }
@@ -147,22 +144,21 @@ const UploadForm = () => {
             form.reset();
             router.push('/');
         } catch (error) {
-            console.error('Upload error:', error);
+            console.error('Upload error details:', error);
             
-            let errorMessage = "Failed to upload book. Please try again later.";
-            
+            // Check the specific error type
             if (error instanceof Error) {
-                errorMessage = error.message;
                 console.error('Error message:', error.message);
+                console.error('Error name:', error.name);
             }
-            
-            toast.error(errorMessage);
+
+            toast.error("Failed to upload book. Please try again later.");
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    if (!isMounted) return null;
+    if (!isMounted || !isLoaded) return null;
 
     return (
         <>
@@ -255,7 +251,7 @@ const UploadForm = () => {
                         />
 
                         {/* 6. Submit Button */}
-                        <Button type="submit" className="form-btn" disabled={isSubmitting || !isLoaded}>
+                        <Button type="submit" className="form-btn" disabled={isSubmitting}>
                             Begin Synthesis
                         </Button>
                     </form>

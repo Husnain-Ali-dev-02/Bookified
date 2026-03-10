@@ -1,4 +1,3 @@
-/* eslint-disable prefer-const */
 import mongoose from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -12,7 +11,7 @@ declare global {
     }
 }
 
-let cached = global.mongooseCache || (global.mongooseCache = { conn: null, promise: null });
+const cached = global.mongooseCache || (global.mongooseCache = { conn: null, promise: null });
 
 export const connectToDatabase = async () => {
     if (cached.conn) return cached.conn;
@@ -25,8 +24,7 @@ export const connectToDatabase = async () => {
         cached.conn = await cached.promise;
     } catch (e) {
         cached.promise = null;
-     const message = e instanceof Error ? e.message : String(e);
-    console.error('MongoDB connection error. Please make sure MongoDB is running.', { message });
+        console.error('MongoDB connection error. Please make sure MongoDB is running. ' + e);
         throw e;
     }
 

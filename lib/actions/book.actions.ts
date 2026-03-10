@@ -6,8 +6,7 @@ import {escapeRegex, generateSlug, serializeData} from "@/lib/utils";
 import Book from "@/database/models/book.model";
 import BookSegment from "@/database/models/book-segment.model";
 import mongoose from "mongoose";
-import {auth} from "@clerk/nextjs/server";
-// import {getUserPlan} from "@/lib/subscription.server";
+import {getUserPlan} from "@/lib/subscription.server";
 
 export const getAllBooks = async (search?: string) => {
     try {
@@ -82,32 +81,34 @@ export const createBook = async (data: CreateBook) => {
             }
         }
 
-        // Validate that clerkId is provided
-        if (!data.clerkId) {
-            return { success: false, error: "User ID is required" };
+        // Todo: Check subscription limits before creating a book
+        const { getUserPlan } = await import("@/lib/subscription.server");
+        const { PLAN_LIMITS } = await import("@/lib/subscription-constants");
+
+        const { auth } = await import("@clerk/nextjs/server");
+        const { userId } = await auth();
+
+        if (!userId || userId !== data.clerkId) {
+            return { success: false, error: "Unauthorized" };
         }
 
-        // Todo: Check subscription limits before creating a book
-        // const { getUserPlan } = await import("@/lib/subscription.server");
-        // const { PLAN_LIMITS } = await import("@/lib/subscription-constants");
+        const plan = await getUserPlan();
+        const limits = PLAN_LIMITS[plan];
 
-        // const plan = await getUserPlan();
-        // const limits = PLAN_LIMITS[plan];
+        const bookCount = await Book.countDocuments({ clerkId: userId });
 
-        const bookCount = await Book.countDocuments({ clerkId: data.clerkId });
+        if (bookCount >= limits.maxBooks) {
+            const { revalidatePath } = await import("next/cache");
+            revalidatePath("/");
 
-        // if (bookCount >= limits.maxBooks) {
-        //     const { revalidatePath } = await import("next/cache");
-        //     revalidatePath("/");
+            return {
+                success: false,
+                error: `You have reached the maximum number of books allowed for your ${plan} plan (${limits.maxBooks}). Please upgrade to add more books.`,
+                isBillingError: true,
+            };
+        }
 
-        //     return {
-        //         success: false,
-        //         error: `You have reached the maximum number of books allowed for your ${plan} plan (${limits.maxBooks}). Please upgrade to add more books.`,
-        //         isBillingError: true,
-        //     };
-        // }
-
-        const book = await Book.create({...data, clerkId: data.clerkId, slug, totalSegments: 0});
+        const book = await Book.create({...data, clerkId: userId, slug, totalSegments: 0});
 
         return {
             success: true,
@@ -149,47 +150,17 @@ export const saveBookSegments = async (bookId: string, clerkId: string, segments
     try {
         await connectToDatabase();
 
-        // Verify user is authenticated
-        const { userId: authenticatedUserId } = await auth();
-
-        if (!authenticatedUserId) {
-            return {
-                success: false,
-                error: "Unauthorized: User not authenticated",
-            };
-        }
-
-        // Verify the authenticated user matches the provided clerkId
-        if (authenticatedUserId !== clerkId) {
-            return {
-                success: false,
-                error: "Unauthorized: User ID mismatch",
-            };
-        }
-
-        // Verify the user owns the book
-        const book = await Book.findById(bookId).select('clerkId').lean();
-
-        if (!book) {
-            return {
-                success: false,
-                error: "Book not found",
-            };
-        }
-
-        if (book.clerkId !== authenticatedUserId) {
-            return {
-                success: false,
-                error: "Unauthorized: You do not own this book",
-            };
-        }
+        console.log('Saving book segments...');
 
         const segmentsToInsert = segments.map(({ text, segmentIndex, pageNumber, wordCount }) => ({
-            clerkId: authenticatedUserId, bookId, content: text, segmentIndex, pageNumber, wordCount
+            clerkId, bookId, content: text, segmentIndex, pageNumber, wordCount
         }));
 
-         const created = await BookSegment.insertMany(segmentsToInsert);
-       await Book.findByIdAndUpdate(bookId, { $inc: { totalSegments: created.length } });
+        await BookSegment.insertMany(segmentsToInsert);
+
+        await Book.findByIdAndUpdate(bookId, { totalSegments: segments.length });
+
+        console.log('Book segments saved successfully.');
 
         return {
             success: true,
